@@ -23,7 +23,7 @@ npm run build
 
 Verify:
 ```bash
-node dist/index.js --help   # should not error (stdio MCP server — connect via MCP client)
+node build/index.js --help   # should not error (stdio MCP server — connect via MCP client)
 ```
 
 ---
@@ -37,7 +37,7 @@ Add this block to your MCP config file (`~/.config/mcp/config.json`, Claude Desk
   "mcpServers": {
     "callput": {
       "command": "node",
-      "args": ["/absolute/path/to/callput-lite-mcp-skill-standalone/dist/index.js"],
+      "args": ["/absolute/path/to/callput-lite-mcp-skill-standalone/build/index.js"],
       "env": {
         "CALLPUT_PRIVATE_KEY": "0xYOUR_PRIVATE_KEY_HERE",
         "CALLPUT_RPC_URL": "https://mainnet.base.org"
