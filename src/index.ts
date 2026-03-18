@@ -8,7 +8,9 @@ import {
   closePosition,
   executeSpread,
   getOptionChains,
+  getPortfolioSummary,
   getPositions,
+  scanSpreads,
   settlePosition,
   validateSpread
 } from "./core.js";
@@ -56,6 +58,16 @@ server.registerTool(
         "If execute mode is used, CALLPUT_PRIVATE_KEY must be set in MCP env.",
         "Use check_request_status after tx broadcast until executed/cancelled."
       ],
+      tools: [
+        "callput_scan_spreads — primary entry point for market scan (bias-driven, returns ≤5 ranked spreads)",
+        "callput_portfolio_summary — positions + mark value + P&L (pass request_keys for cost basis)",
+        "callput_validate_spread — pre-execution check",
+        "callput_execute_spread — execute or dry-run",
+        "callput_check_request_status — poll keeper after broadcast",
+        "callput_close_position — pre-expiry exit",
+        "callput_settle_position — post-expiry settlement",
+        "callput_get_option_chains — raw chain data (use scan_spreads first)"
+      ],
       minimal_state: [
         "asset",
         "bias",
@@ -63,7 +75,8 @@ server.registerTool(
         "long_leg_id",
         "short_leg_id",
         "request_key",
-        "request_status"
+        "request_status",
+        "request_keys[]  ← persist ALL executed request_keys for P&L tracking"
       ]
     });
   }
@@ -236,6 +249,54 @@ server.registerTool(
       return ok(out as Record<string, unknown>);
     } catch (e: any) {
       return fail(`settle_position failed: ${e.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "callput_scan_spreads",
+  {
+    description:
+      "Primary market scan. Returns up to max_results pre-ranked, ready-to-execute spread candidates for a given asset and directional bias. ATM-anchored: generates narrow/medium/wide widths automatically. Eliminates manual chain parsing — pass long_leg_id + short_leg_id directly to execute_spread.",
+    inputSchema: z.object({
+      underlying_asset: z.string(),
+      bias: z.enum(["bullish", "bearish"]),
+      max_results: z.number().int().min(1).max(5).optional()
+    })
+  },
+  async (args) => {
+    try {
+      const result = await scanSpreads({
+        underlyingAsset: args.underlying_asset,
+        bias: args.bias,
+        maxResults: args.max_results
+      });
+      return ok(result as Record<string, unknown>);
+    } catch (e: any) {
+      return fail(`scan_spreads failed: ${e.message}`);
+    }
+  }
+);
+
+server.registerTool(
+  "callput_portfolio_summary",
+  {
+    description:
+      "Returns USDC balance, all active positions enriched with current spread mark value, and optional P&L. Pass request_keys (saved from prior execute_spread calls) to enable cost-basis lookup from on-chain openPositionRequests and compute actual P&L.",
+    inputSchema: z.object({
+      address: z.string().optional(),
+      request_keys: z.array(z.string()).optional()
+    })
+  },
+  async (args) => {
+    try {
+      const result = await getPortfolioSummary({
+        address: args.address,
+        requestKeys: args.request_keys
+      });
+      return ok(result as Record<string, unknown>);
+    } catch (e: any) {
+      return fail(`portfolio_summary failed: ${e.message}`);
     }
   }
 );

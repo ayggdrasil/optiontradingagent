@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Callput Lite MCP — 전체 구조도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f0f4f8;
+    --ink: #1a1d1f;
+    --muted: #4f5c65;
+    --stroke: rgba(40, 48, 56, 0.12);
+    --shadow: 0 4px 24px rgba(17,22,28,0.08);
+
+    --layer-agent:    #1a1d1f;
+    --layer-skill:    #2d4a8f;
+    --layer-mcp:      #1f6b5f;
+    --layer-core:     #6b3a1f;
+    --layer-chain:    #3a1f6b;
+    --layer-ext:      #1f4a6b;
+
+    --new-badge: #e8f5e9;
+    --new-stroke: #2e7d32;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: 'Manrope', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── Layout ── */
+  .page {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .header-left h1 {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .header-left p {
+    color: var(--muted);
+    margin-top: 6px;
+    font-size: 15px;
+  }
+  .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .badge {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid;
+  }
+  .badge-new  { background: var(--new-badge); color: var(--new-stroke); border-color: var(--new-stroke); }
+  .badge-gray { background: #fff; color: var(--muted); border-color: var(--stroke); }
+
+  /* ── Section titles ── */
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* ── Main Architecture Diagram ── */
+  .arch-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .layer {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    margin-bottom: 2px;
+  }
+  .layer-label {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 20px 16px;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+  .layer-label .sub {
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.72;
+    margin-top: 3px;
+  }
+  .layer-body {
+    background: #fff;
+    padding: 16px 20px;
+    border: 1px solid var(--stroke);
+    border-left: none;
+    border-radius: 0 16px 16px 0;
+  }
+
+  .layer-agent  .layer-label { background: var(--layer-agent); }
+  .layer-skill  .layer-label { background: var(--layer-skill); }
+  .layer-mcp    .layer-label { background: var(--layer-mcp); }
+  .layer-core   .layer-label { background: var(--layer-core); }
+  .layer-chain  .layer-label { background: var(--layer-chain); }
+  .layer-ext    .layer-label { background: var(--layer-ext); }
+
+  .layer-connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .layer-connector svg { opacity: 0.5; }
+
+  /* ── Nodes inside layers ── */
+  .node-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .node {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--stroke);
+    background: #f8fafb;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .node.new {
+    background: var(--new-badge);
+    border-color: var(--new-stroke);
+    color: #1b5e20;
+  }
+  .node.highlight {
+    background: #fffde7;
+    border-color: #f9a825;
+    color: #5d4037;
+  }
+  .node .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot-green  { background: #43a047; }
+  .dot-blue   { background: #1976d2; }
+  .dot-orange { background: #f57c00; }
+  .dot-purple { background: #7b1fa2; }
+  .dot-gray   { background: #78909c; }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+
+  /* ── Arrow connector ── */
+  .arrow-down {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    position: relative;
+  }
+  .arrow-down::before {
+    content: '';
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(to bottom, transparent, var(--stroke), var(--stroke), transparent);
+    position: absolute;
+  }
+  .arrow-down .arrow-label {
+    background: var(--bg);
+    padding: 2px 10px;
+    border: 1px solid var(--stroke);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ── Trade Flow ── */
+  .flow-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0;
+    position: relative;
+  }
+  .flow-step {
+    background: #fff;
+    border: 1px solid var(--stroke);
+    border-right: none;
+    padding: 16px 14px;
+    position: relative;
+  }
+  .flow-step:last-child { border-right: 1px solid var(--stroke); border-radius: 0 12px 12px 0; }
+  .flow-step:first-child { border-radius: 12px 0 0 12px; }
+  .flow-step.is-new { background: #f1f8f1; border-top: 2px solid var(--new-stroke); }
+  .step-num {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+  .step-tool {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: #1a1d1f;
+    word-break: break-word;
+    margin-bottom: 6px;
+  }
+  .step-tool.new-tool { color: var(--new-stroke); font-weight: 700; }
+  .step-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+
+  .flow-arrow {
+    position: absolute;
+    right: -12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    background: white;
+    border: 1px solid var(--stroke);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    z-index: 2;
+  }
+  .flow-step:last-child .flow-arrow { display: none; }
+
+  /* ── Tool Grid ── */
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+  .tool-card {
+    background: #fff;
+    border: 1px solid var(--stroke);
+    border-radius: 12px;
+    padding: 14px;
+    transition: box-shadow 0.15s;
+  }
+  .tool-card.is-new {
+    border-color: var(--new-stroke);
+    background: #f9fdf9;
+  }
+  .tool-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .tool-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #1a1d1f;
+    word-break: break-all;
+  }
+  .tool-name.new { color: var(--new-stroke); font-weight: 700; }
+  .tool-io {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .io-row {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    gap: 6px;
+  }
+  .io-label {
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    min-width: 28px;
+    padding-top: 1px;
+    opacity: 0.6;
+  }
+  .pill {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: 700;
+  }
+  .pill-new { background: var(--new-badge); color: var(--new-stroke); }
+  .pill-mcp { background: #e8f5f3; color: #1f6b5f; }
+  .tool-desc { font-size: 12px; color: var(--muted); line-height: 1.45; }
+
+  /* ── Data Flow ── */
+  .dataflow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .df-card {
+    background: #fff;
+    border: 1px solid var(--stroke);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .df-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .df-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--stroke);
+    font-size: 12px;
+  }
+  .df-row:last-child { border-bottom: none; }
+  .df-from { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #1f6b5f; font-weight: 600; min-width: 80px; flex-shrink: 0; }
+  .df-arrow { color: var(--stroke); font-size: 16px; line-height: 1; flex-shrink: 0; padding-top: 1px; }
+  .df-what { color: var(--muted); }
+
+  /* ── Security Boundary ── */
+  .security-box {
+    border: 2px dashed #c62828;
+    border-radius: 12px;
+    padding: 16px 20px;
+    background: #fff8f8;
+  }
+  .security-box .sec-title {
+    font-weight: 800;
+    color: #c62828;
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .sec-rules { display: flex; flex-direction: column; gap: 6px; }
+  .sec-rule { font-size: 12px; color: #4e342e; display: flex; gap: 8px; }
+  .sec-rule::before { content: '⊘'; color: #c62828; flex-shrink: 0; font-size: 13px; }
+
+  /* ── Two-col layout for bottom sections ── */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--stroke);
+  }
+
+  @media (max-width: 760px) {
+    .layer { grid-template-columns: 120px 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    .dataflow { grid-template-columns: 1fr; }
+    .flow-grid { grid-template-columns: 1fr; }
+    .flow-step { border-right: 1px solid var(--stroke); border-bottom: none; border-radius: 12px; }
+    .flow-step:first-child { border-radius: 12px; }
+    .flow-step:last-child { border-radius: 12px; }
+    .flow-arrow { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>Callput Lite MCP — 전체 구조도</h1>
+      <p>OpenClaw / Bankr 에이전트가 Base 위에서 Callput 스프레드를 자율 거래하는 전체 아키텍처</p>
+      <div class="badge-row">
+        <span class="badge badge-new">NEW: callput_scan_spreads</span>
+        <span class="badge badge-new">NEW: callput_portfolio_summary</span>
+        <span class="badge badge-gray">총 10개 MCP 툴</span>
+        <span class="badge badge-gray">Base Mainnet</span>
+        <span class="badge badge-gray">dry_run 기본값</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Section 1: Layered Architecture ── -->
+  <div>
+    <div class="section-title">레이어 아키텍처</div>
+    <div class="arch-diagram">
+
+      <!-- Layer 1: Agent -->
+      <div class="layer layer-agent">
+        <div class="layer-label">
+          에이전트 레이어
+          <span class="sub">OpenClaw / Bankr</span>
+        </div>
+        <div class="layer-body">
+          <div class="node-row">
+            <div class="node"><span class="dot dot-gray"></span>OpenClaw Agent</div>
+            <div class="node"><span class="dot dot-gray"></span>Bankr Agent</div>
+            <div class="node highlight"><span class="dot dot-orange"></span>CALLPUT_PRIVATE_KEY (env)</div>
+            <div class="node highlight"><span class="dot dot-orange"></span>request_keys[] (상태 보관)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="layer-connector">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        SKILL.md 규칙 적용 &nbsp;·&nbsp; EXTERNAL_AGENT_PROMPT.md 시스템 프롬프트
+      </div>
+
+      <!-- Layer 2: Skill -->
+      <div class="layer layer-skill">
+        <div class="layer-label">
+          스킬 레이어
+          <span class="sub">의사결정 규칙</span>
+        </div>
+        <div class="layer-body">
+          <div class="node-row">
+            <div class="node"><span class="dot dot-blue"></span>SKILL.md — 실행 순서 + 행사가 선택 기준</div>
+            <div class="node"><span class="dot dot-blue"></span>EXTERNAL_AGENT_PROMPT.md — 안전/빈도 규칙 14개</div>
+            <div class="node"><span class="dot dot-blue"></span>바이어스 → 전략 매핑</div>
+            <div class="node"><span class="dot dot-blue"></span>P&L 추적 패턴</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="layer-connector">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        stdio MCP transport
+      </div>
+
+      <!-- Layer 3: MCP Server -->
+      <div class="layer layer-mcp">
+        <div class="layer-label">
+          MCP 서버 레이어
+          <span class="sub">src/index.ts</span>
+        </div>
+        <div class="layer-body">
+          <div class="node-row">
+            <div class="node new"><span class="dot dot-green"></span><span class="mono">callput_scan_spreads</span></div>
+            <div class="node new"><span class="dot dot-green"></span><span class="mono">callput_portfolio_summary</span></div>
+            <div class="node"><span class="mono">callput_bootstrap</span></div>
+            <div class="node"><span class="mono">callput_validate_spread</span></div>
+            <div class="node"><span class="mono">callput_execute_spread</span></div>
+            <div class="node"><span class="mono">callput_check_request_status</span></div>
+            <div class="node"><span class="mono">callput_get_positions</span></div>
+            <div class="node"><span class="mono">callput_close_position</span></div>
+            <div class="node"><span class="mono">callput_settle_position</span></div>
+            <div class="node"><span class="mono">callput_get_option_chains</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="layer-connector">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        함수 호출 (core.ts)
+      </div>
+
+      <!-- Layer 4: Core Logic -->
+      <div class="layer layer-core">
+        <div class="layer-label">
+          코어 로직 레이어
+          <span class="sub">src/core.ts</span>
+        </div>
+        <div class="layer-body">
+          <div class="node-row">
+            <div class="node new"><span class="dot dot-green"></span>scanSpreads() — ATM 앵커링, 3-width 생성</div>
+            <div class="node new"><span class="dot dot-green"></span>getPortfolioSummary() — 페어 레그 조회 + P&L</div>
+            <div class="node"><span class="dot dot-orange"></span>getMarketSnapshot() — S3 캐시 (5초 TTL)</div>
+            <div class="node"><span class="dot dot-orange"></span>validateSpread() — 스트라이크 순서 검증</div>
+            <div class="node"><span class="dot dot-orange"></span>executeSpread() — calldata 인코딩 + 서명</div>
+            <div class="node"><span class="dot dot-orange"></span>getPositions() — 토큰 ID 디코딩</div>
+            <div class="node"><span class="dot dot-orange"></span>ensureAllowance() — USDC 자동 승인</div>
+            <div class="node"><span class="dot dot-orange"></span>waitKeeper() — 지수 백오프 폴링</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="layer-connector">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        ethers.js RPC / HTTP fetch
+      </div>
+
+      <!-- Layer 5: Blockchain -->
+      <div class="layer layer-chain">
+        <div class="layer-label">
+          블록체인 레이어
+          <span class="sub">Base Mainnet (8453)</span>
+        </div>
+        <div class="layer-body">
+          <div class="node-row">
+            <div class="node"><span class="dot dot-purple"></span>PositionManager<br><span class="mono" style="font-size:9px">0x83B0...a54af</span></div>
+            <div class="node"><span class="dot dot-purple"></span>SettleManager<br><span class="mono" style="font-size:9px">0x81A5...E77C</span></div>
+            <div class="node"><span class="dot dot-purple"></span>Router<br><span class="mono" style="font-size:9px">0xfc61...4EB2</span></div>
+            <div class="node"><span class="dot dot-purple"></span>USDC<br><span class="mono" style="font-size:9px">0x8335...913</span></div>
+            <div class="node"><span class="dot dot-purple"></span>OPTIONS_TOKEN_ETH</div>
+            <div class="node"><span class="dot dot-purple"></span>OPTIONS_TOKEN_BTC</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="layer-connector">
+        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 8l4 4 4-4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+        HTTP / S3
+      </div>
+
+      <!-- Layer 6: External -->
+      <div class="layer layer-ext">
+        <div class="layer-label">
+          외부 서비스
+          <span class="sub">읽기 전용</span>
+        </div>
+        <div class="layer-body">
+          <div class="node-row">
+            <div class="node"><span class="dot dot-blue"></span>S3 market-data.json — 현물가 + 옵션 체인</div>
+            <div class="node"><span class="dot dot-blue"></span>Base RPC — mainnet.base.org (또는 커스텀)</div>
+            <div class="node"><span class="dot dot-blue"></span>Callput Keeper — 포지션 체결 실행자</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- arch-diagram -->
+  </div>
+
+  <!-- ── Section 2: Trade Flow ── -->
+  <div>
+    <div class="section-title">거래 실행 플로우 (권장 순서)</div>
+    <div class="flow-grid">
+
+      <div class="flow-step is-new">
+        <div class="flow-arrow">→</div>
+        <div class="step-num">STEP 1</div>
+        <div class="step-tool new-tool">portfolio_summary</div>
+        <div class="step-desc">USDC 잔고 + 현재 포지션 확인. urgent_count > 0이면 만기 관리 먼저.</div>
+      </div>
+
+      <div class="flow-step is-new">
+        <div class="flow-arrow">→</div>
+        <div class="step-num">STEP 2</div>
+        <div class="step-tool new-tool">scan_spreads</div>
+        <div class="step-desc">asset + bias 입력 → 최대 5개 순위별 후보. rank 1 = 최고 가성비.</div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-arrow">→</div>
+        <div class="step-num">STEP 3</div>
+        <div class="step-tool">execute_spread<br>(dry_run=true)</div>
+        <div class="step-desc">rank 1 후보로 tx payload 확인. 실제 서명 없음.</div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-arrow">→</div>
+        <div class="step-num">STEP 4</div>
+        <div class="step-tool">execute_spread<br>(dry_run=false)</div>
+        <div class="step-desc">유저 명시 승인 후 실행. USDC 자동 approve 포함.</div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-arrow">→</div>
+        <div class="step-num">STEP 5</div>
+        <div class="step-tool">check_request_status</div>
+        <div class="step-desc">30초마다 폴링. executed / cancelled 확인.</div>
+      </div>
+
+      <div class="flow-step is-new">
+        <div class="flow-arrow">→</div>
+        <div class="step-num">STEP 6</div>
+        <div class="step-tool new-tool">request_key 저장</div>
+        <div class="step-desc">에이전트 상태에 반드시 저장. P&L 추적에 필수.</div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">STEP 7</div>
+        <div class="step-tool">close / settle</div>
+        <div class="step-desc">days_to_expiry &lt; 1 → close. 만기 후 → settle.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Section 3: MCP Tool Cards ── -->
+  <div>
+    <div class="section-title">MCP 툴 전체 목록 (10개)</div>
+    <div class="tool-grid">
+
+      <div class="tool-card is-new">
+        <div class="tool-card-top">
+          <div class="tool-name new">callput_scan_spreads</div>
+          <span class="pill pill-new">NEW</span>
+        </div>
+        <div class="tool-desc">바이어스(bullish/bearish) → ATM 앵커링 → 3가지 width 조합 자동 생성. cost_pct_of_max 순위로 최대 5개 반환.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>asset, bias, max_results?</div>
+          <div class="io-row"><span class="io-label">OUT</span>ranked candidates[ long_leg_id, short_leg_id, cost_pct_of_max, days_to_expiry … ]</div>
+        </div>
+      </div>
+
+      <div class="tool-card is-new">
+        <div class="tool-card-top">
+          <div class="tool-name new">callput_portfolio_summary</div>
+          <span class="pill pill-new">NEW</span>
+        </div>
+        <div class="tool-desc">USDC 잔고 + 전체 포지션의 current_spread_mark 계산. request_keys 제공 시 온체인 amountIn 조회 → 실제 P&L 산출.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>address?, request_keys[]?</div>
+          <div class="io-row"><span class="io-label">OUT</span>usdc_balance, positions[ current_value_usd, urgent ], total_pnl_usd?, total_pnl_pct?</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_bootstrap</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">워크플로우 규칙 + 툴 목록 + minimal_state 스키마 반환. 세션 시작 시 1회 호출.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>(없음)</div>
+          <div class="io-row"><span class="io-label">OUT</span>rules[], tools[], minimal_state[]</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_get_option_chains</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">원시 체인 데이터 조회. scan_spreads 사용이 우선. 커스텀 스트라이크 선택이 필요할 때만 사용.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>asset, option_type?, expiry_date?, max_expiries?, max_strikes?</div>
+          <div class="io-row"><span class="io-label">OUT</span>spot_price, expiries{ call[], put[] }</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_validate_spread</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">스트라이크 순서 / 동일 만기 / 최소 비용 검증. execute 전 필수 (scan_spreads 경로가 아닌 경우).</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>strategy, long_leg_id, short_leg_id</div>
+          <div class="io-row"><span class="io-label">OUT</span>status, spread_cost, strike_diff, leg details</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_execute_spread</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">스프레드 실행. dry_run=true(기본)는 tx payload만 반환. 실행 시 USDC 자동 approve + keeper 대기.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>strategy, long_leg_id, short_leg_id, size, dry_run?</div>
+          <div class="io-row"><span class="io-label">OUT</span>tx_hash, request_key, keeper_status (or dry payload)</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_check_request_status</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">Keeper 실행 여부 조회. pending / executed / cancelled 반환. execute 후 30초 간격 폴링.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>request_key, is_open</div>
+          <div class="io-row"><span class="io-label">OUT</span>status, execution_price, amount_out / size_out</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_get_positions</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">OPTIONS_TOKEN 컨트랙트에서 토큰 ID 조회 후 spread 비트팩 디코딩. portfolio_summary가 이 결과를 내부 사용.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>address?</div>
+          <div class="io-row"><span class="io-label">OUT</span>positions[ token_id, strike, pair_strike, mark_price, side ]</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_close_position</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">만기 전 포지션 조기 청산. createClosePosition calldata 인코딩. days_to_expiry &lt; 1일 때 사용.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>asset, option_token_id, size, dry_run?</div>
+          <div class="io-row"><span class="io-label">OUT</span>tx_hash, request_key (or dry payload)</div>
+        </div>
+      </div>
+
+      <div class="tool-card">
+        <div class="tool-card-top">
+          <div class="tool-name">callput_settle_position</div>
+          <span class="pill pill-mcp">MCP</span>
+        </div>
+        <div class="tool-desc">만기 후 정산. SettleManager.settlePosition 호출. 만기된 포지션에만 사용.</div>
+        <div class="tool-io">
+          <div class="io-row"><span class="io-label">IN</span>asset, option_token_id, dry_run?</div>
+          <div class="io-row"><span class="io-label">OUT</span>tx_hash, receipt_status (or dry payload)</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Section 4: Data Flow + Security ── -->
+  <div class="two-col">
+
+    <div>
+      <div class="section-title">데이터 흐름</div>
+      <div class="df-card">
+
+        <div class="df-title">읽기 경로 (시장 데이터)</div>
+        <div class="df-row">
+          <div class="df-from">S3 feed</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">getMarketSnapshot() → 5초 캐시 → 옵션 배열 파싱</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from">snapshot</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">scanSpreads() ATM 인덱싱 → rank 1~5 후보 반환</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from">snapshot</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">portfolio_summary() naked + pair leg mark 조회 → spread mark 계산</div>
+        </div>
+
+        <div class="df-title" style="margin-top:14px">쓰기 경로 (트랜잭션)</div>
+        <div class="df-row">
+          <div class="df-from">에이전트</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">execute_spread → USDC approve → createOpenPosition tx → keeper 대기</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from">tx receipt</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">GenerateRequestKey 이벤트 파싱 → request_key 추출</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from">request_key</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">에이전트 상태에 저장 → portfolio_summary P&L 계산에 재사용</div>
+        </div>
+
+        <div class="df-title" style="margin-top:14px">P&L 경로 (온체인 조회)</div>
+        <div class="df-row">
+          <div class="df-from">request_keys</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">openPositionRequests(key).amountIn → USDC 진입 비용</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from">amountIn</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">total_pnl = total_mark_value − total_entry_cost</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div>
+      <div class="section-title">보안 경계</div>
+      <div class="security-box">
+        <div class="sec-title">절대 위반 불가 규칙</div>
+        <div class="sec-rules">
+          <div class="sec-rule">CALLPUT_PRIVATE_KEY는 MCP 환경변수에만 존재. 어떤 출력/로그에도 노출 금지.</div>
+          <div class="sec-rule">Frontend(ARCHITECTURE.html, index.html)는 키 미보관. 실행 권한 없음.</div>
+          <div class="sec-rule">Single-leg 직접 실행 금지. 항상 스프레드 쌍으로만 거래.</div>
+          <div class="sec-rule">dry_run=true가 기본값. 유저 명시 승인 없이 dry_run=false 전환 금지.</div>
+          <div class="sec-rule">main/master에 force push 금지. 모든 배포는 PR 경유.</div>
+        </div>
+      </div>
+
+      <div class="df-title" style="margin-top: 20px">새 툴의 P&L 원리</div>
+      <div class="df-card">
+        <div class="df-row">
+          <div class="df-from" style="min-width:100px">현재 가치</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">|naked_mark − pair_mark| × size<br>snapshot에서 실시간 조회</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from" style="min-width:100px">진입 비용</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">openPositionRequests(key).amountIn<br>온체인 영구 저장값 (추정 없음)</div>
+        </div>
+        <div class="df-row">
+          <div class="df-from" style="min-width:100px">P&L</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">현재가치 − 진입비용<br>request_keys 제공 시에만 계산</div>
+        </div>
+        <div class="df-row" style="border-bottom:none">
+          <div class="df-from" style="min-width:100px; color:#c62828">주의</div>
+          <div class="df-arrow">→</div>
+          <div class="df-what">mark-to-market (미실현). 실현 손익은 청산 후 확인.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Section 5: scan_spreads 상세 ── -->
+  <div>
+    <div class="section-title">scan_spreads 내부 동작 — 조합 폭발 억제 원리</div>
+    <div class="df-card">
+      <div style="display: grid; grid-template-columns: 1fr 40px 1fr 40px 1fr 40px 1fr; gap: 0; align-items: center; text-align: center; font-size: 12px;">
+
+        <div style="padding: 12px; background: #f0f7ff; border-radius: 10px; border: 1px solid #bbdefb;">
+          <div style="font-weight:800; font-size:13px; color:#1565c0; margin-bottom:6px">입력</div>
+          <div>asset = ETH</div>
+          <div>bias = bearish</div>
+        </div>
+
+        <div style="color: var(--muted); font-size: 18px; font-weight:300">→</div>
+
+        <div style="padding: 12px; background: #fff8e1; border-radius: 10px; border: 1px solid #ffe082;">
+          <div style="font-weight:800; font-size:13px; color:#f57f17; margin-bottom:6px">자동 결정</div>
+          <div>optionType = Put</div>
+          <div>strategy = BuyPutSpread</div>
+          <div>expiry = 가장 빠른 &gt;6h</div>
+          <div>longLeg = ATM strike</div>
+        </div>
+
+        <div style="color: var(--muted); font-size: 18px; font-weight:300">→</div>
+
+        <div style="padding: 12px; background: #f3e5f5; border-radius: 10px; border: 1px solid #ce93d8;">
+          <div style="font-weight:800; font-size:13px; color:#6a1b9a; margin-bottom:6px">3가지 width 생성</div>
+          <div>narrow: ATM / ATM−1</div>
+          <div>medium: ATM / ATM−2</div>
+          <div>wide:   ATM / ATM−3</div>
+        </div>
+
+        <div style="color: var(--muted); font-size: 18px; font-weight:300">→</div>
+
+        <div style="padding: 12px; background: #e8f5e9; border-radius: 10px; border: 1px solid #a5d6a7;">
+          <div style="font-weight:800; font-size:13px; color:#2e7d32; margin-bottom:6px">출력 (최대 5개)</div>
+          <div>rank 1: cost_pct 18%</div>
+          <div>rank 2: cost_pct 24%</div>
+          <div>rank 3: cost_pct 31%</div>
+          <div style="margin-top:6px; font-size:10px; color:#388e3c">long_leg_id + short_leg_id<br>바로 execute에 사용 가능</div>
+        </div>
+
+      </div>
+      <div style="margin-top: 12px; padding: 10px 14px; background: #f8fafb; border-radius: 8px; font-size: 12px; color: var(--muted); border: 1px solid var(--stroke);">
+        기존 방식: 체인 조회 → 수백 개 조합 에이전트가 직접 파싱 → 수십 turn 소요<br>
+        <strong style="color: var(--ink)">신규 방식: bias 1개 입력 → 3개 후보 → rank 1 바로 실행 → 2 turn 완료</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    callput-lite-mcp-skill v0.1 &nbsp;·&nbsp; Base Mainnet &nbsp;·&nbsp; 10 MCP Tools (2 NEW) &nbsp;·&nbsp; OpenClaw / Bankr 호환
+  </div>
+
+</div>
+</body>
+</html>
