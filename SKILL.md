@@ -1,29 +1,32 @@
 ---
 name: callput-lite-trader
-description: Spread-only Callput trading skill for external agents on Base. Bias-driven scan, ATM-anchored execution, on-chain P&L tracking.
+description: Spread-only Callput trading skill for external agents on Base. Unsigned-tx pattern — MCP builds calldata, agent signs and broadcasts with its own key.
 license: MIT
 ---
 
 # Callput Lite Trader Skill
 
 ## Goal
-Trade Callput spreads autonomously with minimal tool calls and minimal context.
+Trade Callput spreads autonomously. MCP builds unsigned transactions; the agent signs and broadcasts using its own wallet.
 
 ---
 
 ## Preferred flow (fast path)
 
 ```
-1. callput_portfolio_summary          ← check positions + USDC balance before every trade
+1. callput_portfolio_summary(address)       ← check positions + USDC balance
    [if request_keys lost]
-   callput_list_positions_by_wallet   ← recover request_keys from on-chain events
-2. callput_scan_spreads               ← pick asset + bias, get ranked candidates + atm_iv
-3. callput_execute_spread (dry_run)   ← confirm tx payload with rank 1 candidate
-4. callput_execute_spread (live)      ← real execution (explicit user auth required)
-5. callput_check_request_status       ← poll until executed/cancelled
-6. persist request_key                ← REQUIRED for P&L tracking
+   callput_list_positions_by_wallet(address) ← recover request_keys from on-chain events
+2. callput_scan_spreads                     ← pick asset + bias, get ranked candidates + atm_iv
+3. callput_execute_spread(from_address)     ← returns unsigned_tx + usdc_approval check
+   [if usdc_approval.sufficient == false]
+   → sign + broadcast approve_tx first
+4. sign + broadcast unsigned_tx            ← agent signs with its own key
+5. callput_get_request_key_from_tx(txHash) ← parse GenerateRequestKey from receipt
+6. persist request_key                     ← REQUIRED for P&L tracking
+7. callput_check_request_status            ← poll every 30s until executed/cancelled
    [after settlement]
-   callput_get_settled_pnl            ← realized payout history
+   callput_get_settled_pnl                 ← realized payout history
 ```
 
 ---
@@ -32,15 +35,14 @@ Trade Callput spreads autonomously with minimal tool calls and minimal context.
 
 1. Spread-only. No single-leg execution ever.
 2. Always check `callput_portfolio_summary` before opening a new position.
-3. Use `callput_scan_spreads` as the primary market entry point — not raw `get_option_chains`.
-4. Validate before execute if not using scan path (`callput_validate_spread`).
-5. Call spread ordering: long lower strike, short higher strike.
-6. Put spread ordering: long higher strike, short lower strike.
-7. Keep `dry_run=true` unless user explicitly authorizes real execution.
-8. `CALLPUT_PRIVATE_KEY` must never appear in any output or log.
-9. **Save every `request_key` returned by `execute_spread`** — required for P&L via `portfolio_summary`.
-10. If `request_keys` are lost, call `callput_list_positions_by_wallet` to recover them from on-chain events.
-11. Check `atm_iv` from scan output: high IV (>80% ETH, >70% BTC) favors sell spreads over buy spreads.
+3. Use `callput_scan_spreads` as the primary market entry point.
+4. Call spread ordering: long lower strike, short higher strike.
+5. Put spread ordering: long higher strike, short lower strike.
+6. MCP never holds or requires a private key — agent signs externally.
+7. If `usdc_approval.sufficient == false`, send approve_tx before the main tx.
+8. **Save every `request_key` from `get_request_key_from_tx`** — required for P&L.
+9. If `request_keys` are lost, call `callput_list_positions_by_wallet` to recover them.
+10. Check `atm_iv` from scan output: high IV (>80% ETH, >70% BTC) favors sell spreads.
 
 ---
 
@@ -84,7 +86,7 @@ Skip and wait if any of these are true:
 
 ## Position management
 
-- **Poll keeper**: after every execute, poll `check_request_status` every 30s, max 3 minutes
+- **Poll keeper**: after every broadcast, poll `check_request_status` every 30s, max 3 minutes
 - **Pre-expiry**: use `callput_close_position` when `days_to_expiry < 1`
 - **Post-expiry**: use `callput_settle_position` for expired positions
 - **Profit taking**: consider closing when `close_pnl_est_pct > 50` (50% gain on tradeable close)
@@ -94,11 +96,12 @@ Skip and wait if any of these are true:
 ## P&L tracking pattern
 
 ```
-# After execute_spread returns:
-agent_state.request_keys.push(result.request_key)
+# After broadcast + receipt:
+const { request_key } = await callput_get_request_key_from_tx({ tx_hash })
+agent_state.request_keys.push(request_key)
 
 # To check P&L at any time:
-callput_portfolio_summary({ request_keys: agent_state.request_keys })
+callput_portfolio_summary({ address, request_keys: agent_state.request_keys })
 ```
 
 ### Per-position P&L fields (returned when `request_keys` are passed)
@@ -109,23 +112,34 @@ callput_portfolio_summary({ request_keys: agent_state.request_keys })
 | `current_value_usd` | Current mark-price spread value (mid fair value) |
 | `unrealized_pnl_usd` | `current_value_usd − entry_cost_usd` (mark-based, not tradeable) |
 | `unrealized_pnl_pct` | Unrealized P&L as % of entry cost |
-| `close_bid_value_usd` | Bid-based close estimate: `naked.bid − pair.ask` (conservative, what you'd actually receive) |
+| `close_bid_value_usd` | Bid-based close estimate: `naked.bid − pair.ask` (conservative) |
 | `close_pnl_est_usd` | `close_bid_value_usd − entry_cost_usd` (realistic exit P&L) |
 | `close_pnl_est_pct` | Close P&L as % of entry cost |
 
-**Use `close_pnl_est_usd` for profit-taking decisions** — it reflects what you'd receive if you closed now, not the fair mid.
+**Use `close_pnl_est_usd` for profit-taking decisions.**
 
-**Profit taking rule**: consider closing when `close_pnl_est_pct > 50` (50% gain on tradeable close).
+---
 
-### P&L bridging: how request_key → position
+## Tool reference (10 tools)
 
-`openPositionRequests(key).optionTokenId` links each `request_key` to the ERC-1155 token that represents the position. This is resolved automatically inside `callput_portfolio_summary` — agents only need to pass the saved `request_keys` array.
+| Tool | Purpose |
+|---|---|
+| `callput_scan_spreads` | Primary market scan — ranked spread candidates + ATM IV |
+| `callput_execute_spread` | Build unsigned open-position tx + USDC allowance check |
+| `callput_get_request_key_from_tx` | Parse request_key from tx receipt after broadcast |
+| `callput_check_request_status` | Poll keeper until executed/cancelled |
+| `callput_portfolio_summary` | USDC balance + positions + P&L (pass request_keys) |
+| `callput_close_position` | Build unsigned close-position tx |
+| `callput_settle_position` | Build unsigned settle tx for expired positions |
+| `callput_list_positions_by_wallet` | Recover request_keys from on-chain events (after session loss) |
+| `callput_get_settled_pnl` | Realized payout history from SettlePosition events |
+| `callput_get_option_chains` | Raw chain data + IV (use scan_spreads first) |
 
 ---
 
 ## One-line command examples
 
-- `Scan ETH bearish and execute rank 1 spread.`
-- `Check my portfolio summary and P&L.`
+- `Scan ETH bearish and build the rank 1 spread tx.`
+- `Check my portfolio summary and P&L for address 0x...`
 - `Close all positions expiring within 24 hours.`
 - `Settle all expired ETH/BTC positions.`

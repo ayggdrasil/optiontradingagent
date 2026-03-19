@@ -327,12 +327,6 @@ function getProvider() {
   return new ethers.JsonRpcProvider(process.env.RPC_URL || CONFIG.RPC_URL);
 }
 
-function getSigner(provider: ethers.JsonRpcProvider): ethers.Wallet {
-  const pk = process.env.CALLPUT_PRIVATE_KEY;
-  if (!pk) throw new Error("CALLPUT_PRIVATE_KEY is required for execute mode.");
-  return new ethers.Wallet(pk.startsWith("0x") ? pk : `0x${pk}`, provider);
-}
-
 function statusFromRaw(raw: number): "pending" | "cancelled" | "executed" {
   if (raw === 2) return "executed";
   if (raw === 1) return "cancelled";
@@ -362,31 +356,24 @@ function toUsdcRaw(value: number): bigint {
   return BigInt(scaled);
 }
 
-async function ensureAllowance(
-  provider: ethers.JsonRpcProvider,
-  signer: ethers.Wallet,
-  amountIn: bigint,
-  autoApprove: boolean
-): Promise<{ approved: boolean; approval_tx_hash?: string; allowance: string }> {
-  const usdc = new ethers.Contract(CONFIG.CONTRACTS.USDC, ERC20_ABI, signer);
-  const owner = await signer.getAddress();
-  const allowance = (await usdc.allowance(owner, CONFIG.CONTRACTS.ROUTER)) as bigint;
+async function checkAllowance(
+  fromAddress: string,
+  amountIn: bigint
+): Promise<{ sufficient: boolean; current_allowance: string; required: string; approve_tx?: { to: string; data: string; value: string; chain_id: number } }> {
+  const provider = getProvider();
+  const usdc = new ethers.Contract(CONFIG.CONTRACTS.USDC, ERC20_ABI, provider);
+  const allowance = (await usdc.allowance(fromAddress, CONFIG.CONTRACTS.ROUTER)) as bigint;
   if (allowance >= amountIn) {
-    return { approved: false, allowance: allowance.toString() };
+    return { sufficient: true, current_allowance: allowance.toString(), required: amountIn.toString() };
   }
-
-  if (!autoApprove) {
-    throw new Error(`Insufficient USDC allowance. required=${amountIn} current=${allowance}`);
-  }
-
   const approveAmount = amountIn * 2n;
-  const tx = await usdc.approve(CONFIG.CONTRACTS.ROUTER, approveAmount);
-  await tx.wait();
-  const updated = (await usdc.allowance(owner, CONFIG.CONTRACTS.ROUTER)) as bigint;
+  const iface = new ethers.Interface(ERC20_ABI);
+  const data = iface.encodeFunctionData("approve", [CONFIG.CONTRACTS.ROUTER, approveAmount]);
   return {
-    approved: true,
-    approval_tx_hash: tx.hash,
-    allowance: updated.toString()
+    sufficient: false,
+    current_allowance: allowance.toString(),
+    required: amountIn.toString(),
+    approve_tx: { to: CONFIG.CONTRACTS.USDC, data, value: "0", chain_id: CONFIG.CHAIN_ID }
   };
 }
 
@@ -406,6 +393,15 @@ function extractRequestKey(receipt: ethers.TransactionReceipt): { request_key: s
     }
   }
   return null;
+}
+
+export async function getRequestKeyFromTx(txHash: string): Promise<{ request_key: string; is_open: boolean } | { error: string }> {
+  const provider = getProvider();
+  const receipt = await provider.getTransactionReceipt(txHash);
+  if (!receipt) return { error: `Transaction receipt not found for ${txHash}` };
+  const result = extractRequestKey(receipt as ethers.TransactionReceipt);
+  if (!result) return { error: "GenerateRequestKey event not found in transaction logs" };
+  return result;
 }
 
 export async function checkRequestStatus(requestKey: string, isOpen: boolean) {
@@ -441,33 +437,16 @@ export async function checkRequestStatus(requestKey: string, isOpen: boolean) {
   return result;
 }
 
-async function waitKeeper(requestKey: string, isOpen: boolean, timeoutSec: number): Promise<Record<string, unknown>> {
-  const start = Date.now();
-  let intervalMs = 1000;
-  while (Date.now() - start < timeoutSec * 1000) {
-    const status = await checkRequestStatus(requestKey, isOpen);
-    if (status.status === "executed" || status.status === "cancelled") return status;
-    await new Promise((r) => setTimeout(r, intervalMs));
-    intervalMs = Math.min(5000, Math.floor(intervalMs * 1.5));
-  }
-  return {
-    request_key: requestKey,
-    status: "pending",
-    timed_out: true,
-    timeout_sec: timeoutSec
-  };
-}
-
 export async function executeSpread(params: {
   strategy: SpreadStrategy;
+  fromAddress: string;
   longLegId: string;
   shortLegId: string;
   size: number;
   minFillRatio?: number;
-  waitForKeeper?: boolean;
-  dryRun?: boolean;
-  autoApprove?: boolean;
 }) {
+  if (!ethers.isAddress(params.fromAddress)) throw new Error(`Invalid fromAddress: ${params.fromAddress}`);
+
   const validation = await validateSpread(params.strategy, params.longLegId, params.shortLegId);
   const details: any = validation.details;
 
@@ -515,80 +494,41 @@ export async function executeSpread(params: {
   const provider = getProvider();
   const pmRead = new ethers.Contract(CONFIG.CONTRACTS.POSITION_MANAGER, POSITION_MANAGER_ABI, provider);
   const executionFee = await getExecutionFee(pmRead);
+  const allowanceInfo = await checkAllowance(params.fromAddress, amountIn);
 
-  if (params.dryRun ?? false) {
-    return {
-      mode: "dry_run",
-      validation,
-      tx: {
-        to: CONFIG.CONTRACTS.POSITION_MANAGER,
-        data,
-        value: executionFee.toString(),
-        chain_id: CONFIG.CHAIN_ID
-      },
-      quote: {
-        strategy: params.strategy,
-        size: params.size,
-        size_raw: sizeRaw.toString(),
-        min_size_raw: minSize.toString(),
-        amount_in_usdc: amountInUsdc,
-        amount_in_raw: amountIn.toString(),
-        underlying_decimals: underlyingDecimals
-      }
-    };
-  }
+  const nextSteps = allowanceInfo.sufficient
+    ? ["1. Sign and broadcast unsigned_tx", "2. Call callput_get_request_key_from_tx(tx_hash)", "3. Poll callput_check_request_status(request_key, is_open=true)"]
+    : ["1. Sign and broadcast usdc_approval.approve_tx first", "2. Sign and broadcast unsigned_tx", "3. Call callput_get_request_key_from_tx(tx_hash)", "4. Poll callput_check_request_status(request_key, is_open=true)"];
 
-  const signer = getSigner(provider);
-  const allowanceInfo = await ensureAllowance(provider, signer, amountIn, params.autoApprove ?? true);
-
-  const pm = new ethers.Contract(CONFIG.CONTRACTS.POSITION_MANAGER, POSITION_MANAGER_ABI, signer);
-  const tx = await pm.createOpenPosition(
-    underlyingIndex,
-    length,
-    isBuys,
-    optionIds,
-    isCalls,
-    minSize,
-    path,
-    amountIn,
-    0,
-    ethers.ZeroAddress,
-    { value: executionFee }
-  );
-  const receipt = await tx.wait();
-  if (!receipt) throw new Error("No transaction receipt returned.");
-
-  const requestKeyData = extractRequestKey(receipt);
-  if (!requestKeyData) {
-    throw new Error("GenerateRequestKey event not found in receipt logs.");
-  }
-
-  const out: Record<string, unknown> = {
-    mode: "executed",
-    approval: allowanceInfo,
-    tx_hash: tx.hash,
-    request_key: requestKeyData.request_key,
-    request_is_open: requestKeyData.is_open,
+  return {
+    validation,
+    unsigned_tx: {
+      to: CONFIG.CONTRACTS.POSITION_MANAGER,
+      data,
+      value: executionFee.toString(),
+      chain_id: CONFIG.CHAIN_ID
+    },
+    usdc_approval: allowanceInfo,
     quote: {
       strategy: params.strategy,
+      size: params.size,
+      size_raw: sizeRaw.toString(),
+      min_size_raw: minSize.toString(),
       amount_in_usdc: amountInUsdc,
-      amount_in_raw: amountIn.toString()
-    }
+      amount_in_raw: amountIn.toString(),
+      underlying_decimals: underlyingDecimals
+    },
+    next_steps: nextSteps
   };
-
-  if (params.waitForKeeper ?? true) {
-    out.keeper = await waitKeeper(requestKeyData.request_key, true, 120);
-  }
-  return out;
 }
 
 export async function closePosition(params: {
   underlyingAsset: string;
+  fromAddress: string;
   optionTokenId: string;
   size: number;
-  waitForKeeper?: boolean;
-  dryRun?: boolean;
 }) {
+  if (!ethers.isAddress(params.fromAddress)) throw new Error(`Invalid fromAddress: ${params.fromAddress}`);
   const asset = normalizeAsset(params.underlyingAsset);
   if (!asset) throw new Error(`Unsupported asset: ${params.underlyingAsset}`);
 
@@ -611,59 +551,30 @@ export async function closePosition(params: {
   const pmRead = new ethers.Contract(CONFIG.CONTRACTS.POSITION_MANAGER, POSITION_MANAGER_ABI, provider);
   const executionFee = await getExecutionFee(pmRead);
 
-  if (params.dryRun ?? false) {
-    return {
-      mode: "dry_run",
-      tx: {
-        to: CONFIG.CONTRACTS.POSITION_MANAGER,
-        data,
-        value: executionFee.toString(),
-        chain_id: CONFIG.CHAIN_ID
-      },
-      close: {
-        asset,
-        option_token_id: params.optionTokenId,
-        size: params.size,
-        size_raw: sizeRaw.toString()
-      }
-    };
-  }
-
-  const signer = getSigner(provider);
-  const pm = new ethers.Contract(CONFIG.CONTRACTS.POSITION_MANAGER, POSITION_MANAGER_ABI, signer);
-  const tx = await pm.createClosePosition(
-    underlyingIndex,
-    BigInt(params.optionTokenId),
-    sizeRaw,
-    path,
-    0,
-    0,
-    false,
-    { value: executionFee }
-  );
-  const receipt = await tx.wait();
-  if (!receipt) throw new Error("No transaction receipt returned.");
-
-  const requestKeyData = extractRequestKey(receipt);
-  if (!requestKeyData) throw new Error("GenerateRequestKey event not found in receipt logs.");
-
-  const out: Record<string, unknown> = {
-    mode: "executed",
-    tx_hash: tx.hash,
-    request_key: requestKeyData.request_key,
-    request_is_open: requestKeyData.is_open
+  return {
+    unsigned_tx: {
+      to: CONFIG.CONTRACTS.POSITION_MANAGER,
+      data,
+      value: executionFee.toString(),
+      chain_id: CONFIG.CHAIN_ID
+    },
+    close: {
+      asset,
+      option_token_id: params.optionTokenId,
+      size: params.size,
+      size_raw: sizeRaw.toString()
+    },
+    next_steps: [
+      "1. Sign and broadcast unsigned_tx",
+      "2. Call callput_get_request_key_from_tx(tx_hash)",
+      "3. Poll callput_check_request_status(request_key, is_open=false)"
+    ]
   };
-
-  if (params.waitForKeeper ?? true) {
-    out.keeper = await waitKeeper(requestKeyData.request_key, false, 120);
-  }
-  return out;
 }
 
 export async function settlePosition(params: {
   underlyingAsset: string;
   optionTokenId: string;
-  dryRun?: boolean;
 }) {
   const asset = normalizeAsset(params.underlyingAsset);
   if (!asset) throw new Error(`Unsupported asset: ${params.underlyingAsset}`);
@@ -679,42 +590,27 @@ export async function settlePosition(params: {
     false
   ]);
 
-  if (params.dryRun ?? false) {
-    return {
-      mode: "dry_run",
-      tx: {
-        to: CONFIG.CONTRACTS.SETTLE_MANAGER,
-        data,
-        value: "0",
-        chain_id: CONFIG.CHAIN_ID
-      }
-    };
-  }
-
-  const provider = getProvider();
-  const signer = getSigner(provider);
-  const settle = new ethers.Contract(CONFIG.CONTRACTS.SETTLE_MANAGER, SETTLE_MANAGER_ABI, signer);
-  const tx = await settle.settlePosition(path, underlyingIndex, BigInt(params.optionTokenId), 0, false, { value: 0 });
-  const receipt = await tx.wait();
-  if (!receipt) throw new Error("No settlement receipt returned.");
-
   return {
-    mode: "executed",
-    tx_hash: tx.hash,
-    receipt_status: receipt.status
+    unsigned_tx: {
+      to: CONFIG.CONTRACTS.SETTLE_MANAGER,
+      data,
+      value: "0",
+      chain_id: CONFIG.CHAIN_ID
+    },
+    settle: {
+      asset,
+      option_token_id: params.optionTokenId
+    },
+    next_steps: [
+      "1. Sign and broadcast unsigned_tx",
+      "2. Verify settlement via callput_portfolio_summary (position should disappear)",
+      "3. Check callput_get_settled_pnl for realized payout"
+    ]
   };
 }
 
-export async function getPositions(addressInput?: string) {
+export async function getPositions(address: string) {
   const provider = getProvider();
-  let address = addressInput;
-  if (!address) {
-    const pk = process.env.CALLPUT_PRIVATE_KEY;
-    if (!pk) throw new Error("address is required when CALLPUT_PRIVATE_KEY is not set.");
-    const wallet = new ethers.Wallet(pk.startsWith("0x") ? pk : `0x${pk}`);
-    address = wallet.address;
-  }
-
   if (!ethers.isAddress(address)) throw new Error(`Invalid address: ${address}`);
   const account = ethers.getAddress(address);
 
@@ -768,20 +664,12 @@ export async function getPositions(addressInput?: string) {
 // Critical for restoring P&L tracking after session loss.
 
 export async function listPositionsByWallet(params: {
-  address?: string;
+  address: string;
   fromBlock?: number;
 }) {
   const provider = getProvider();
-
-  let address = params.address;
-  if (!address) {
-    const pk = process.env.CALLPUT_PRIVATE_KEY;
-    if (!pk) throw new Error("address is required when CALLPUT_PRIVATE_KEY is not set.");
-    const wallet = new ethers.Wallet(pk.startsWith("0x") ? pk : `0x${pk}`);
-    address = wallet.address;
-  }
-  if (!ethers.isAddress(address)) throw new Error(`Invalid address: ${address}`);
-  const account = ethers.getAddress(address);
+  if (!ethers.isAddress(params.address)) throw new Error(`Invalid address: ${params.address}`);
+  const account = ethers.getAddress(params.address);
 
   const pm = new ethers.Contract(CONFIG.CONTRACTS.POSITION_MANAGER, POSITION_MANAGER_ABI, provider);
   const latestBlock = await provider.getBlockNumber();
@@ -819,20 +707,12 @@ export async function listPositionsByWallet(params: {
 // amountOut = gross USDC received at settlement (subtract entry_cost for realized P&L).
 
 export async function getSettledPnl(params: {
-  address?: string;
+  address: string;
   fromBlock?: number;
 }) {
   const provider = getProvider();
-
-  let address = params.address;
-  if (!address) {
-    const pk = process.env.CALLPUT_PRIVATE_KEY;
-    if (!pk) throw new Error("address is required when CALLPUT_PRIVATE_KEY is not set.");
-    const wallet = new ethers.Wallet(pk.startsWith("0x") ? pk : `0x${pk}`);
-    address = wallet.address;
-  }
-  if (!ethers.isAddress(address)) throw new Error(`Invalid address: ${address}`);
-  const account = ethers.getAddress(address);
+  if (!ethers.isAddress(params.address)) throw new Error(`Invalid address: ${params.address}`);
+  const account = ethers.getAddress(params.address);
 
   const settle = new ethers.Contract(CONFIG.CONTRACTS.SETTLE_MANAGER, SETTLE_MANAGER_ABI, provider);
   const latestBlock = await provider.getBlockNumber();
@@ -1044,25 +924,18 @@ export async function scanSpreads(params: {
 // and optional P&L if request_keys from prior executions are provided.
 
 export async function getPortfolioSummary(params: {
-  address?: string;
+  address: string;
   requestKeys?: string[];
 }) {
   const provider = getProvider();
 
-  let address = params.address;
-  if (!address) {
-    const pk = process.env.CALLPUT_PRIVATE_KEY;
-    if (!pk) throw new Error("address is required when CALLPUT_PRIVATE_KEY is not set.");
-    const wallet = new ethers.Wallet(pk.startsWith("0x") ? pk : `0x${pk}`);
-    address = wallet.address;
-  }
-  if (!ethers.isAddress(address)) throw new Error(`Invalid address: ${address}`);
-  const account = ethers.getAddress(address);
+  if (!ethers.isAddress(params.address)) throw new Error(`Invalid address: ${params.address}`);
+  const account = ethers.getAddress(params.address);
 
   const usdc = new ethers.Contract(CONFIG.CONTRACTS.USDC, ERC20_ABI, provider);
   const [snapshot, positionData, usdcBalanceRaw] = await Promise.all([
     getMarketSnapshot(),
-    getPositions(address),
+    getPositions(params.address),
     usdc.balanceOf(account) as Promise<bigint>
   ]);
 
