@@ -486,14 +486,14 @@
 <!-- TOOLS -->
 <section id="tools">
   <div class="section-label">Tools</div>
-  <h2>All 11 MCP Tools</h2>
+  <h2>All 10 MCP Tools</h2>
   <div class="tools-grid">
 
     <div class="tool-card">
       <div class="tool-name"><span class="prefix">callput_</span>scan_spreads <span class="tool-badge badge-core">primary entry</span></div>
       <div class="tool-desc">Bias-driven market scan. Returns ≤5 pre-ranked spread candidates, ATM-anchored. Includes <code style="color:var(--cyan-dim);font-size:10px">atm_iv</code> for buy vs sell decisions.</div>
       <div class="tool-io">
-        <div class="tool-io-block"><div class="tool-io-label">Inputs</div><div class="tool-io-val">asset: BTC|ETH<br>bias: bullish|bearish<br>&nbsp;&nbsp;neutral-bearish<br>&nbsp;&nbsp;neutral-bullish<br>max_results?</div></div>
+        <div class="tool-io-block"><div class="tool-io-label">Inputs</div><div class="tool-io-val">underlying_asset: BTC|ETH<br>bias: bullish|bearish<br>&nbsp;&nbsp;neutral-bearish<br>&nbsp;&nbsp;neutral-bullish<br>max_results?</div></div>
         <div class="tool-io-block"><div class="tool-io-label">Outputs</div><div class="tool-io-val">candidates[]<br>spread_cost/credit<br>cost/credit_pct_of_max<br>atm_iv<br>days_to_expiry</div></div>
       </div>
     </div>
@@ -536,7 +536,7 @@
 
     <div class="tool-card">
       <div class="tool-name"><span class="prefix">callput_</span>check_request_status</div>
-      <div class="tool-desc">Poll keeper status after broadcast. Call every 30s, max 6 attempts. May be dropped if still pending after ~3 min.</div>
+      <div class="tool-desc">Poll keeper status after broadcast. Call every 30s until <code style="color:var(--cyan-dim);font-size:10px">executed</code> or <code style="color:var(--cyan-dim);font-size:10px">cancelled</code>. May be dropped if still pending after ~3 min.</div>
       <div class="tool-io">
         <div class="tool-io-block"><div class="tool-io-label">Inputs</div><div class="tool-io-val">request_key<br>is_open: bool</div></div>
         <div class="tool-io-block"><div class="tool-io-label">Outputs</div><div class="tool-io-val">status:<br>&nbsp;&nbsp;pending<br>&nbsp;&nbsp;executed<br>&nbsp;&nbsp;cancelled</div></div>
@@ -548,7 +548,7 @@
       <div class="tool-desc">Build unsigned close tx. Use when <code style="color:var(--cyan-dim);font-size:10px">days_to_expiry &lt; 1</code> or profit target hit. Agent signs and broadcasts.</div>
       <div class="tool-io">
         <div class="tool-io-block"><div class="tool-io-label">Inputs</div><div class="tool-io-val">underlying_asset<br>from_address ★<br>option_token_id<br>size</div></div>
-        <div class="tool-io-block"><div class="tool-io-label">Outputs</div><div class="tool-io-val">unsigned_tx<br>close</div></div>
+        <div class="tool-io-block"><div class="tool-io-label">Outputs</div><div class="tool-io-val">unsigned_tx<br>close<br>next_steps[]</div></div>
       </div>
     </div>
 
