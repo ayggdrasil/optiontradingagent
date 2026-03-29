@@ -40,7 +40,7 @@ Add this block to your MCP config file (`~/.config/mcp/config.json`, Claude Desk
       "args": ["/absolute/path/to/callput-lite-mcp-skill-standalone/build/index.js"],
       "env": {
         "CALLPUT_PRIVATE_KEY": "0xYOUR_PRIVATE_KEY_HERE",
-        "CALLPUT_RPC_URL": "https://mainnet.base.org"
+        "RPC_URL": "https://mainnet.base.org"
       }
     }
   }
@@ -54,7 +54,7 @@ Add this block to your MCP config file (`~/.config/mcp/config.json`, Claude Desk
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `CALLPUT_PRIVATE_KEY` | Yes (live mode) | — | Wallet private key (hex, with `0x`) |
-| `CALLPUT_RPC_URL` | No | `https://mainnet.base.org` | Base Mainnet RPC endpoint |
+| `RPC_URL` | No | `https://mainnet.base.org` | Base Mainnet RPC endpoint |
 
 ---
 
@@ -68,7 +68,7 @@ Inject the contents of `EXTERNAL_AGENT_PROMPT.md` as your agent's system prompt 
 You are a spread-only Callput trading agent on Base.
 
 ## Safety rules (non-negotiable)
-1. Always call callput_validate_spread before callput_execute_spread unless using the scan path.
+1. Always call callput_scan_spreads to find candidates (replaces validate_spread).
 2. Never trade single-leg options.
 3. Keep dry_run=true unless the user has explicitly authorized real execution in this session.
 4. Call spread ordering: long lower strike, short higher strike.
@@ -113,20 +113,17 @@ If your agent runtime supports skill/persona files, register `SKILL.md` as the a
 Run these commands in order at the start of every agent session:
 
 ```
-1. "Bootstrap the agent and review all rules."
-   → callput_bootstrap()
-
-2. "Run a portfolio summary."
-   → callput_portfolio_summary({ request_keys: [] })
+1. "Run a portfolio summary."
+   → callput_portfolio_summary({ address: "0x...", request_keys: [] })
    → Check: usdc_balance, urgent_count, open positions
 
-3. "Scan ETH bullish spreads."
+2. "Scan ETH bullish spreads."
    → callput_scan_spreads({ underlying_asset: "ETH", bias: "bullish" })
-   → Review: candidates, cost_pct_of_max, days_to_expiry
+   → Review: candidates, cost_pct_of_max, days_to_expiry, atm_iv
 
-4. "Dry-run rank 1 spread with size 1."
-   → callput_execute_spread({ ...rank1, size: 1, dry_run: true })
-   → Inspect: tx payload, estimated_cost_usd
+3. "Dry-run rank 1 spread with size 1."
+   → callput_execute_spread({ strategy: "BuyCallSpread", from_address: "0x...", long_leg_id: "...", short_leg_id: "...", size: 1 })
+   → Inspect: unsigned_tx payload, estimated_cost_usd, usdc_approval
 
 5. [Only after explicit user authorization:]
    "I authorize live execution. Execute the rank 1 ETH bullish spread with size 1."

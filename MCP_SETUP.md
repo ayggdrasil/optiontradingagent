@@ -29,7 +29,6 @@ npm run verify
 ```
 
 ## Verify in client
-- Call `callput_bootstrap`
-- Call `callput_get_option_chains` for ETH
-- Call `callput_validate_spread`
-- Call `callput_execute_spread` with `dry_run=true`
+- Call `callput_portfolio_summary` with your address
+- Call `callput_scan_spreads` with asset="ETH" and bias="bullish"
+- Call `callput_get_option_chains` for ETH (optional, raw chain inspection)

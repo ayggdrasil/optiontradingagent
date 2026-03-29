@@ -2,10 +2,9 @@
   "mcpServers": {
     "callput_lite": {
       "command": "node",
-      "args": ["<repo_root>/build/index.js"],
+      "args": ["/absolute/path/to/callput-option-agent/build/index.js"],
       "env": {
-        "RPC_URL": "https://mainnet.base.org",
-        "CALLPUT_PRIVATE_KEY": "0xREPLACE_WITH_RUNTIME_KEY"
+        "CALLPUT_RPC_URL": "https://mainnet.base.org"
       }
     }
   }

@@ -1,3 +1,14 @@
+let _chainValidated = false;
+
+export async function validateChainId(provider: any): Promise<void> {
+  if (_chainValidated) return;
+  const network = await provider.getNetwork();
+  if (network.chainId !== BigInt(CONFIG.CHAIN_ID)) {
+    throw new Error(`RPC provider is on chain ${network.chainId}, expected Base (${CONFIG.CHAIN_ID})`);
+  }
+  _chainValidated = true;
+}
+
 export const CONFIG = {
   RPC_URL: process.env.RPC_URL || "https://mainnet.base.org",
   CHAIN_ID: 8453,

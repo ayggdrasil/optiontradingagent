@@ -4,3 +4,10 @@ build/
 __pycache__/
 *.pyc
 .vercel
+
+# Agent-generated reports (not for repo)
+FINAL_QA_REPORT.txt
+*.txt
+
+# Duplicate tool reference (canonical version is callput/references/TOOL_REFERENCE.md)
+TOOL_REFERENCE.md

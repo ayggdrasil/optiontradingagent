@@ -35,6 +35,22 @@ function fail(message: string) {
   };
 }
 
+// ─── MCP Tool Registration (10 tools total) ──────────────────────────────────
+// 1. callput_scan_spreads          – Market scan with pre-ranked spread candidates
+// 2. callput_execute_spread        – Build unsigned spread transaction
+// 3. callput_get_request_key_from_tx – Extract request_key from tx receipt
+// 4. callput_check_request_status  – Poll keeper status by request_key
+// 5. callput_portfolio_summary     – USDC balance + positions + P&L
+// 6. callput_close_position        – Build unsigned close transaction
+// 7. callput_settle_position       – Build unsigned settle transaction
+// 8. callput_list_positions_by_wallet – Recover request_keys from events
+// 9. callput_get_settled_pnl       – Query realized payout history
+// 10. callput_get_option_chains    – Raw tradable options from market feed
+//
+// Note: validateSpread, getPositions, and bootstrap are core functions but not
+// exposed as separate tools—validateSpread is called internally by executeSpread,
+// getPositions is wrapped by portfolio_summary, and bootstrap logic is implicit.
+
 // ── 1. callput_scan_spreads ───────────────────────────────────────────────────
 server.registerTool(
   "callput_scan_spreads",

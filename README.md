@@ -30,15 +30,17 @@ This package is designed for:
 - `FAQ.md` : operator FAQ
 - `frontend-v1/` : static responsive UI for V1 guidance
 
-## MCP Tool Set
-- `callput_bootstrap`
-- `callput_get_option_chains`
-- `callput_validate_spread`
-- `callput_execute_spread`
-- `callput_check_request_status`
-- `callput_get_positions`
-- `callput_close_position`
-- `callput_settle_position`
+## MCP Tool Set (10 tools)
+- `callput_scan_spreads` — Market scan with ranked spread candidates
+- `callput_execute_spread` — Build unsigned spread transaction
+- `callput_get_request_key_from_tx` — Extract request_key from receipt
+- `callput_check_request_status` — Poll keeper status by request_key
+- `callput_portfolio_summary` — USDC balance + positions + P&L
+- `callput_close_position` — Build unsigned close transaction
+- `callput_settle_position` — Build unsigned settle transaction
+- `callput_list_positions_by_wallet` — Recover request_keys from events
+- `callput_get_settled_pnl` — Realized payout history
+- `callput_get_option_chains` — Raw option chains from market feed
 
 ## Quick Start
 

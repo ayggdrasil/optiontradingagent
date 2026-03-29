@@ -1,9 +1,43 @@
 import { ethers } from "ethers";
-import { CONFIG, ERC20_ABI, OPTIONS_TOKEN_ABI, POSITION_MANAGER_ABI, SETTLE_MANAGER_ABI } from "./config.js";
+import { CONFIG, ERC20_ABI, OPTIONS_TOKEN_ABI, POSITION_MANAGER_ABI, SETTLE_MANAGER_ABI, validateChainId } from "./config.js";
 
 export type UnderlyingAsset = "BTC" | "ETH";
 export type OptionSide = "Call" | "Put";
 export type SpreadStrategy = "BuyCallSpread" | "SellCallSpread" | "BuyPutSpread" | "SellPutSpread";
+
+// ─── Type interfaces for contract responses ────────────────────────────────
+export interface OpenPositionRequest {
+  account: string;
+  underlyingAssetIndex: bigint;
+  expiry: bigint;
+  optionTokenId: bigint;
+  minSize: bigint;
+  amountIn: bigint;
+  minOutWhenSwap: bigint;
+  isDepositedInNAT: boolean;
+  blockTime: bigint;
+  status: bigint;
+  sizeOut: bigint;
+  executionPrice: bigint;
+  processBlockTime: bigint;
+  amountOut: bigint;
+}
+
+export interface ClosePositionRequest {
+  account: string;
+  underlyingAssetIndex: bigint;
+  expiry: bigint;
+  optionTokenId: bigint;
+  size: bigint;
+  minAmountOut: bigint;
+  minOutWhenSwap: bigint;
+  withdrawNAT: boolean;
+  blockTime: bigint;
+  status: bigint;
+  amountOut: bigint;
+  executionPrice: bigint;
+  processBlockTime: bigint;
+}
 
 type MarketOption = {
   instrument: string;
@@ -123,11 +157,16 @@ export function buildInstrument(
 }
 
 async function fetchRawMarketData(): Promise<MarketDataPayload> {
-  const response = await fetch(CONFIG.MARKET_DATA_URL, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch market data: HTTP ${response.status}`);
+  try {
+    const response = await fetch(CONFIG.MARKET_DATA_URL, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch market data from ${CONFIG.MARKET_DATA_URL}: HTTP ${response.status}`);
+    }
+    return (await response.json()) as MarketDataPayload;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to fetch market data from ${CONFIG.MARKET_DATA_URL}: ${msg}`);
   }
-  return (await response.json()) as MarketDataPayload;
 }
 
 export async function getMarketSnapshot(force = false): Promise<{ options: MarketOption[]; spot: Record<UnderlyingAsset, number> }> {
@@ -327,6 +366,12 @@ function getProvider() {
   return new ethers.JsonRpcProvider(process.env.RPC_URL || CONFIG.RPC_URL);
 }
 
+async function getValidatedProvider(): Promise<ethers.JsonRpcProvider> {
+  const provider = getProvider();
+  await validateChainId(provider);
+  return provider;
+}
+
 function statusFromRaw(raw: number): "pending" | "cancelled" | "executed" {
   if (raw === 2) return "executed";
   if (raw === 1) return "cancelled";
@@ -407,20 +452,24 @@ export async function getRequestKeyFromTx(txHash: string): Promise<{ request_key
 export async function checkRequestStatus(requestKey: string, isOpen: boolean) {
   const provider = getProvider();
   const pm = new ethers.Contract(CONFIG.CONTRACTS.POSITION_MANAGER, POSITION_MANAGER_ABI, provider);
+
   const req: any = isOpen
     ? await pm.openPositionRequests(requestKey)
     : await pm.closePositionRequests(requestKey);
 
-  const account: string = String(req.account ?? req[0]);
-  if (account.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
+  // Extract account safely from struct response
+  const account: string = String(req.account || (Array.isArray(req) && req[0]) || "");
+  if (!account || account.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
     return {
       status: "not_found",
       request_key: requestKey
     };
   }
 
-  const statusRaw = Number(req.status ?? req[9] ?? 0);
+  // Extract status safely from struct response
+  const statusRaw = Number(req.status || (Array.isArray(req) && req[9]) || 0);
   const status = statusFromRaw(statusRaw);
+
   const result: Record<string, unknown> = {
     request_key: requestKey,
     status,
@@ -428,11 +477,13 @@ export async function checkRequestStatus(requestKey: string, isOpen: boolean) {
   };
 
   if (isOpen) {
-    result.size_out = String(req.sizeOut ?? req[10] ?? "0");
-    result.execution_price = String(req.executionPrice ?? req[11] ?? "0");
+    // OpenPositionRequest: sizeOut at req[10], executionPrice at req[11]
+    result.size_out = String(req.sizeOut || (Array.isArray(req) && req[10]) || "0");
+    result.execution_price = String(req.executionPrice || (Array.isArray(req) && req[11]) || "0");
   } else {
-    result.amount_out = String(req.amountOut ?? req[10] ?? "0");
-    result.execution_price = String(req.executionPrice ?? req[11] ?? "0");
+    // ClosePositionRequest: amountOut at req[10], executionPrice at req[11]
+    result.amount_out = String(req.amountOut || (Array.isArray(req) && req[10]) || "0");
+    result.execution_price = String(req.executionPrice || (Array.isArray(req) && req[11]) || "0");
   }
   return result;
 }
@@ -446,6 +497,10 @@ export async function executeSpread(params: {
   minFillRatio?: number;
 }) {
   if (!ethers.isAddress(params.fromAddress)) throw new Error(`Invalid fromAddress: ${params.fromAddress}`);
+
+  // Validate option IDs are numeric strings before converting to BigInt
+  if (!params.longLegId.match(/^\d+$/)) throw new Error(`Invalid option ID format (long leg): ${params.longLegId}`);
+  if (!params.shortLegId.match(/^\d+$/)) throw new Error(`Invalid option ID format (short leg): ${params.shortLegId}`);
 
   const validation = await validateSpread(params.strategy, params.longLegId, params.shortLegId);
   const details: any = validation.details;
@@ -506,7 +561,8 @@ export async function executeSpread(params: {
       to: CONFIG.CONTRACTS.POSITION_MANAGER,
       data,
       value: executionFee.toString(),
-      chain_id: CONFIG.CHAIN_ID
+      chain_id: CONFIG.CHAIN_ID,
+      from: ethers.getAddress(params.fromAddress)
     },
     usdc_approval: allowanceInfo,
     quote: {
@@ -556,7 +612,8 @@ export async function closePosition(params: {
       to: CONFIG.CONTRACTS.POSITION_MANAGER,
       data,
       value: executionFee.toString(),
-      chain_id: CONFIG.CHAIN_ID
+      chain_id: CONFIG.CHAIN_ID,
+      from: ethers.getAddress(params.fromAddress)
     },
     close: {
       asset,
@@ -575,6 +632,7 @@ export async function closePosition(params: {
 export async function settlePosition(params: {
   underlyingAsset: string;
   optionTokenId: string;
+  fromAddress?: string;
 }) {
   const asset = normalizeAsset(params.underlyingAsset);
   if (!asset) throw new Error(`Unsupported asset: ${params.underlyingAsset}`);
@@ -595,7 +653,8 @@ export async function settlePosition(params: {
       to: CONFIG.CONTRACTS.SETTLE_MANAGER,
       data,
       value: "0",
-      chain_id: CONFIG.CHAIN_ID
+      chain_id: CONFIG.CHAIN_ID,
+      from: params.fromAddress ? ethers.getAddress(params.fromAddress) : undefined
     },
     settle: {
       asset,
@@ -722,21 +781,22 @@ export async function getSettledPnl(params: {
   const logs = await settle.queryFilter(filter, fromBlock, latestBlock);
 
   let totalAmountOutUsd = 0;
-  const settlements: any[] = [];
+  const settlements: Record<string, unknown>[] = [];
 
   for (const log of logs) {
     const ev = log as ethers.EventLog;
-    const underlyingAssetIndex = Number(ev.args.underlyingAssetIndex);
+    // Extract event args safely
+    const underlyingAssetIndex = Number((ev.args as any).underlyingAssetIndex || 0);
     const underlying: UnderlyingAsset | string =
       underlyingAssetIndex === 1 ? "BTC" :
       underlyingAssetIndex === 2 ? "ETH" :
       `UNKNOWN(${underlyingAssetIndex})`;
-    const expirySec = Number(ev.args.expiry);
-    const optionTokenId = String(ev.args.optionTokenId);
+    const expirySec = Number((ev.args as any).expiry || 0);
+    const optionTokenId = String((ev.args as any).optionTokenId || "0");
     const assetDecimals = underlyingAssetIndex === 1 ? CONFIG.ASSETS.BTC.decimals : CONFIG.ASSETS.ETH.decimals;
-    const size = Number(ev.args.size) / 10 ** assetDecimals;
-    const amountOutUsd = Number(ev.args.amountOut) / 10 ** CONFIG.ASSETS.USDC.decimals;
-    const settlePrice = Number(ev.args.settlePrice);
+    const size = Number((ev.args as any).size || 0) / 10 ** assetDecimals;
+    const amountOutUsd = Number((ev.args as any).amountOut || 0) / 10 ** CONFIG.ASSETS.USDC.decimals;
+    const settlePrice = Number((ev.args as any).settlePrice || 0);
 
     totalAmountOutUsd += amountOutUsd;
 
@@ -956,11 +1016,14 @@ export async function getPortfolioSummary(params: {
     );
     for (const r of results) {
       if (r.status !== "fulfilled") continue;
-      const req = r.value as any;
-      const acct = String(req.account ?? req[0]);
-      if (acct.toLowerCase() === ethers.ZeroAddress.toLowerCase()) continue;
-      const tokenId = String(req.optionTokenId ?? req[3] ?? "0");
-      const amountIn = Number(req.amountIn ?? req[5] ?? 0) / 10 ** CONFIG.ASSETS.USDC.decimals;
+      const req: any = r.value;
+      // Extract account safely from struct response
+      const acct = String(req.account || (Array.isArray(req) && req[0]) || "");
+      if (!acct || acct.toLowerCase() === ethers.ZeroAddress.toLowerCase()) continue;
+      // Extract tokenId safely from struct response (index 3)
+      const tokenId = String(req.optionTokenId || (Array.isArray(req) && req[3]) || "0");
+      // Extract amountIn safely from struct response (index 5)
+      const amountIn = Number(req.amountIn || (Array.isArray(req) && req[5]) || 0) / 10 ** CONFIG.ASSETS.USDC.decimals;
       if (tokenId && tokenId !== "0" && amountIn > 0) {
         // accumulate in case the same token was entered in multiple batches
         tokenIdToEntryUsd.set(tokenId, (tokenIdToEntryUsd.get(tokenId) ?? 0) + amountIn);
